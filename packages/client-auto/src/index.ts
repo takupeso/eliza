@@ -5,20 +5,23 @@ export class AutoClient {
     runtime: IAgentRuntime;
 
     constructor(runtime: IAgentRuntime) {
+        elizaLogger.error("running auto client...");
         this.runtime = runtime;
 
         // start a loop that runs every x seconds
         this.interval = setInterval(
             async () => {
-                elizaLogger.log("running auto client...");
+                elizaLogger.error("running auto client...");
             },
-            60 * 60 * 1000
+            // 60 * 60 * 1000
+            1000
         ); // 1 hour in milliseconds
     }
 }
 
 export const AutoClientInterface: Client = {
     start: async (runtime: IAgentRuntime) => {
+        elizaLogger.error("running auto client...");
         const client = new AutoClient(runtime);
         return client;
     },
