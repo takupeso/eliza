@@ -3,7 +3,6 @@ import { PostgresDatabaseAdapter } from "@elizaos/adapter-postgres";
 import { RedisClient } from "@elizaos/adapter-redis";
 import { SqliteDatabaseAdapter } from "@elizaos/adapter-sqlite";
 import { SupabaseDatabaseAdapter } from "@elizaos/adapter-supabase";
-import { AutoClientInterface } from "@elizaos/client-auto";
 import { DiscordClientInterface } from "@elizaos/client-discord";
 import { FarcasterAgentClient } from "@elizaos/client-farcaster";
 import { LensAgentClient } from "@elizaos/client-lens";
@@ -39,12 +38,12 @@ import { zgPlugin } from "@elizaos/plugin-0g";
 import { bootstrapPlugin } from "@elizaos/plugin-bootstrap";
 import createGoatPlugin from "@elizaos/plugin-goat";
 // import { intifacePlugin } from "@elizaos/plugin-intiface";
-import { DirectClient } from "@elizaos/client-direct";
 import { ThreeDGenerationPlugin } from "@elizaos/plugin-3d-generation";
 import { abstractPlugin } from "@elizaos/plugin-abstract";
 import { alloraPlugin } from "@elizaos/plugin-allora";
 import { aptosPlugin } from "@elizaos/plugin-aptos";
 import { artheraPlugin } from "@elizaos/plugin-arthera";
+import { autonomePlugin } from "@elizaos/plugin-autonome";
 import { availPlugin } from "@elizaos/plugin-avail";
 import { avalanchePlugin } from "@elizaos/plugin-avalanche";
 import { binancePlugin } from "@elizaos/plugin-binance";
@@ -56,8 +55,8 @@ import {
     tradePlugin,
     webhookPlugin,
 } from "@elizaos/plugin-coinbase";
-import { coinmarketcapPlugin } from "@elizaos/plugin-coinmarketcap";
 import { coingeckoPlugin } from "@elizaos/plugin-coingecko";
+import { coinmarketcapPlugin } from "@elizaos/plugin-coinmarketcap";
 import { confluxPlugin } from "@elizaos/plugin-conflux";
 import { createCosmosPlugin } from "@elizaos/plugin-cosmos";
 import { cronosZkEVMPlugin } from "@elizaos/plugin-cronoszkevm";
@@ -76,7 +75,6 @@ import { obsidianPlugin } from "@elizaos/plugin-obsidian";
 import { sgxPlugin } from "@elizaos/plugin-sgx";
 import { solanaPlugin } from "@elizaos/plugin-solana";
 import { solanaAgentkitPlguin } from "@elizaos/plugin-solana-agentkit";
-import { autonomePlugin } from "@elizaos/plugin-autonome";
 import { storyPlugin } from "@elizaos/plugin-story";
 import { suiPlugin } from "@elizaos/plugin-sui";
 import { TEEMode, teePlugin } from "@elizaos/plugin-tee";
@@ -86,23 +84,25 @@ import { tonPlugin } from "@elizaos/plugin-ton";
 import { webSearchPlugin } from "@elizaos/plugin-web-search";
 
 import { giphyPlugin } from "@elizaos/plugin-giphy";
+import { hyperliquidPlugin } from "@elizaos/plugin-hyperliquid";
 import { letzAIPlugin } from "@elizaos/plugin-letzai";
 import { thirdwebPlugin } from "@elizaos/plugin-thirdweb";
-import { hyperliquidPlugin } from "@elizaos/plugin-hyperliquid";
 import { zksyncEraPlugin } from "@elizaos/plugin-zksync-era";
 
+import { akashPlugin } from "@elizaos/plugin-akash";
 import { OpacityAdapter } from "@elizaos/plugin-opacity";
 import { openWeatherPlugin } from "@elizaos/plugin-open-weather";
-import { stargazePlugin } from "@elizaos/plugin-stargaze";
-import { akashPlugin } from "@elizaos/plugin-akash";
 import { quaiPlugin } from "@elizaos/plugin-quai";
+import { stargazePlugin } from "@elizaos/plugin-stargaze";
 import Database from "better-sqlite3";
 import fs from "fs";
 import net from "net";
 import path from "path";
 import { fileURLToPath } from "url";
 import yargs from "yargs";
-import {dominosPlugin} from "@elizaos/plugin-dominos";
+import { jobOrderInterface } from "../client-job-order/src/index";
+import { jobWorkerInterface } from "../client-job-worker/src/index";
+import { createJobAction } from "../custom_actions/createJob";
 
 const __filename = fileURLToPath(import.meta.url); // get the resolved path to the file
 const __dirname = path.dirname(__filename); // get the name of the directory
@@ -152,14 +152,29 @@ function tryLoadFile(filePath: string): string | null {
 function mergeCharacters(base: Character, child: Character): Character {
     const mergeObjects = (baseObj: any, childObj: any) => {
         const result: any = {};
-        const keys = new Set([...Object.keys(baseObj || {}), ...Object.keys(childObj || {})]);
-        keys.forEach(key => {
-            if (typeof baseObj[key] === 'object' && typeof childObj[key] === 'object' && !Array.isArray(baseObj[key]) && !Array.isArray(childObj[key])) {
+        const keys = new Set([
+            ...Object.keys(baseObj || {}),
+            ...Object.keys(childObj || {}),
+        ]);
+        keys.forEach((key) => {
+            if (
+                typeof baseObj[key] === "object" &&
+                typeof childObj[key] === "object" &&
+                !Array.isArray(baseObj[key]) &&
+                !Array.isArray(childObj[key])
+            ) {
                 result[key] = mergeObjects(baseObj[key], childObj[key]);
-            } else if (Array.isArray(baseObj[key]) || Array.isArray(childObj[key])) {
-                result[key] = [...(baseObj[key] || []), ...(childObj[key] || [])];
+            } else if (
+                Array.isArray(baseObj[key]) ||
+                Array.isArray(childObj[key])
+            ) {
+                result[key] = [
+                    ...(baseObj[key] || []),
+                    ...(childObj[key] || []),
+                ];
             } else {
-                result[key] = childObj[key] !== undefined ? childObj[key] : baseObj[key];
+                result[key] =
+                    childObj[key] !== undefined ? childObj[key] : baseObj[key];
             }
         });
         return result;
@@ -174,32 +189,36 @@ async function loadCharacter(filePath: string): Promise<Character> {
     let character = JSON.parse(content);
     validateCharacterConfig(character);
 
-     // .id isn't really valid
-     const characterId = character.id || character.name;
-     const characterPrefix = `CHARACTER.${characterId.toUpperCase().replace(/ /g, "_")}.`;
-     const characterSettings = Object.entries(process.env)
-         .filter(([key]) => key.startsWith(characterPrefix))
-         .reduce((settings, [key, value]) => {
-             const settingKey = key.slice(characterPrefix.length);
-             return { ...settings, [settingKey]: value };
-         }, {});
-     if (Object.keys(characterSettings).length > 0) {
-         character.settings = character.settings || {};
-         character.settings.secrets = {
-             ...characterSettings,
-             ...character.settings.secrets,
-         };
-     }
-     // Handle plugins
-     character.plugins = await handlePluginImporting(
-        character.plugins
-    );
+    // .id isn't really valid
+    const characterId = character.id || character.name;
+    const characterPrefix = `CHARACTER.${characterId.toUpperCase().replace(/ /g, "_")}.`;
+    const characterSettings = Object.entries(process.env)
+        .filter(([key]) => key.startsWith(characterPrefix))
+        .reduce((settings, [key, value]) => {
+            const settingKey = key.slice(characterPrefix.length);
+            return { ...settings, [settingKey]: value };
+        }, {});
+    if (Object.keys(characterSettings).length > 0) {
+        character.settings = character.settings || {};
+        character.settings.secrets = {
+            ...characterSettings,
+            ...character.settings.secrets,
+        };
+    }
+    // Handle plugins
+    character.plugins = await handlePluginImporting(character.plugins);
     if (character.extends) {
-        elizaLogger.info(`Merging  ${character.name} character with parent characters`);
+        elizaLogger.info(
+            `Merging  ${character.name} character with parent characters`
+        );
         for (const extendPath of character.extends) {
-            const baseCharacter = await loadCharacter(path.resolve(path.dirname(filePath), extendPath));
+            const baseCharacter = await loadCharacter(
+                path.resolve(path.dirname(filePath), extendPath)
+            );
             character = mergeCharacters(baseCharacter, character);
-            elizaLogger.info(`Merged ${character.name} with ${baseCharacter.name}`);
+            elizaLogger.info(
+                `Merged ${character.name} with ${baseCharacter.name}`
+            );
         }
     }
     return character;
@@ -472,7 +491,9 @@ function initializeDatabase(dataDir: string) {
         // Test the connection
         db.init()
             .then(() => {
-                elizaLogger.success("Successfully connected to Supabase database");
+                elizaLogger.success(
+                    "Successfully connected to Supabase database"
+                );
             })
             .catch((error) => {
                 elizaLogger.error("Failed to connect to Supabase:", error);
@@ -489,7 +510,9 @@ function initializeDatabase(dataDir: string) {
         // Test the connection
         db.init()
             .then(() => {
-                elizaLogger.success("Successfully connected to PostgreSQL database");
+                elizaLogger.success(
+                    "Successfully connected to PostgreSQL database"
+                );
             })
             .catch((error) => {
                 elizaLogger.error("Failed to connect to PostgreSQL:", error);
@@ -504,14 +527,17 @@ function initializeDatabase(dataDir: string) {
         });
         return db;
     } else {
-        const filePath = process.env.SQLITE_FILE ?? path.resolve(dataDir, "db.sqlite");
+        const filePath =
+            process.env.SQLITE_FILE ?? path.resolve(dataDir, "db.sqlite");
         elizaLogger.info(`Initializing SQLite database at ${filePath}...`);
         const db = new SqliteDatabaseAdapter(new Database(filePath));
 
         // Test the connection
         db.init()
             .then(() => {
-                elizaLogger.success("Successfully connected to SQLite database");
+                elizaLogger.success(
+                    "Successfully connected to SQLite database"
+                );
             })
             .catch((error) => {
                 elizaLogger.error("Failed to connect to SQLite:", error);
@@ -535,8 +561,18 @@ export async function initializeClients(
 
     // Start Auto Client if "auto" detected as a configured client
     if (clientTypes.includes(Clients.AUTO)) {
-        const autoClient = await AutoClientInterface.start(runtime);
-        if (autoClient) clients.auto = autoClient;
+        // const autoClient = await AutoClientInterface.start(runtime);
+        // if (autoClient) clients.auto = autoClient;
+    }
+
+    if (clientTypes.includes(Clients.JOB_WORKER)) {
+        const jobWorkder = await jobWorkerInterface.start(runtime);
+        if (jobWorkder) clients.jobWorkder = jobWorkder;
+    }
+
+    if (clientTypes.includes(Clients.JOB_ORDER)) {
+        const jobOrderClient = await jobOrderInterface.start(runtime);
+        if (jobOrderClient) clients.jobOrder = jobOrderClient;
     }
 
     if (clientTypes.includes(Clients.DISCORD)) {
@@ -689,7 +725,8 @@ export async function createAgent(
     if (
         process.env.PRIMUS_APP_ID &&
         process.env.PRIMUS_APP_SECRET &&
-        process.env.VERIFIABLE_INFERENCE_ENABLED === "true"){
+        process.env.VERIFIABLE_INFERENCE_ENABLED === "true"
+    ) {
         verifiableInferenceAdapter = new PrimusAdapter({
             appId: process.env.PRIMUS_APP_ID,
             appSecret: process.env.PRIMUS_APP_SECRET,
@@ -851,12 +888,10 @@ export async function createAgent(
             getSecret(character, "AKASH_WALLET_ADDRESS")
                 ? akashPlugin
                 : null,
-            getSecret(character, "QUAI_PRIVATE_KEY")
-                ? quaiPlugin
-                : null,
+            getSecret(character, "QUAI_PRIVATE_KEY") ? quaiPlugin : null,
         ].filter(Boolean),
         providers: [],
-        actions: [],
+        actions: [createJobAction],
         services: [],
         managers: [],
         cacheManager: cache,
